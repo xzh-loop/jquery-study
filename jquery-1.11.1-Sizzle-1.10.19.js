@@ -1,14 +1,4 @@
 var Sizzle =
-/*!
- * Sizzle CSS Selector Engine v1.10.19
- * http://sizzlejs.com/
- *
- * Copyright 2013 jQuery Foundation, Inc. and other contributors
- * Released under the MIT license
- * http://jquery.org/license
- *
- * Date: 2014-04-18
- */
 (function( window ) {
 
 var i,
@@ -201,7 +191,9 @@ function Sizzle( selector, context, results, seed ) {
 		// QSA vars - 即querySelectorAll
 		i, groups, old, nid, newContext, newSelector;
 
+	// 如果context的ownerDocument或它本身不是document
 	if ( ( context ? context.ownerDocument || context : preferredDoc ) !== document ) {
+		// 设置document相关的变量
 		setDocument( context );
 	}
 
@@ -210,7 +202,7 @@ function Sizzle( selector, context, results, seed ) {
 
 	// 如果selector是空串或不是字符串，返回传入的result
 	if ( !selector || typeof selector !== "string" ) {	return results;	 }
-
+	
 	// 如果context既不是元素也不是document对象，返回一个空数组
 	if ( (nodeType = context.nodeType) !== 1 && nodeType !== 9 ) {	return [];	}
 

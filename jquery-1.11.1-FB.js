@@ -582,9 +582,10 @@ function isArraylike( obj ) {
 	return type === "array" || length === 0 ||
 		typeof length === "number" && length > 0 && ( length - 1 ) in obj;
 }
-var Sizzle;
 
-
+//-----------------------------
+//-----Sizzle-1.10.19 here-----
+//-----------------------------
 
 jQuery.find = Sizzle;
 jQuery.expr = Sizzle.selectors;
