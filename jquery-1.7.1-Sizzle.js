@@ -1,5 +1,18 @@
 (function(){
-
+	/* 
+		A: \((?:\([^()]+\)|[^()]+)+\)	- 函数式过滤块，用于匹配伪类圆括号部分。圆括号中必须有字符，最多匹配两层括号。如:has(selector)
+		B: \[(?:\[[^\[\]]*\]|['"][^'"]*['"]|[^\[\]'"]+)+\]	- 属性过滤块，用于匹配方括号包裹的内容
+			b1: \[[^\[\]]*\]	嵌套方括号[[]], [[abc]], [[abc=123]], [[abc="123"]]
+			b2: ['"][^'"]*['"]	有引号包裹[""], ["abc"], ["abc=123"]
+			b3: [^\[\]'"]+		无引号包裹[abc], [abc=123]
+			b4: 属性名和属性值的引号可有可无[abc="123"], ["abc"="123"]
+		C: \\.
+		D: [^ >+~,(\[\\]+
+		E: [>+~]
+		F: (\s*,\s*)
+		G: ((?:.|\r|\n)*)
+		Addup: /((?:A|B|C|D)+|E)F?G/
+	*/
 	var chunker = /((?:\((?:\([^()]+\)|[^()]+)+\)|\[(?:\[[^\[\]]*\]|['"][^'"]*['"]|[^\[\]'"]+)+\]|\\.|[^ >+~,(\[\\]+)+|[>+~])(\s*,\s*)?((?:.|\r|\n)*)/g,
 		expando = "sizcache" + (Math.random() + '').replace('.', ''),
 		done = 0,
@@ -34,7 +47,10 @@
 	 * @param: seed 可选元素集合，从它过滤出匹配选择器表达式的元素集合
 	 */
 	var Sizzle = function( selector, context, results, seed ) {
-		results = results || [];context = context || document;	// 修正参数
+		/*------------------------------------------------
+		   1、解析块表达式和块间关系符，正则chunker
+		  ------------------------------------------------*/
+		results = results || [];context = context || document; // 修正参数
 		// 备份context，用于存在并列选择器表达式的时候，
 		// 如果selector是以#id开头的，可能会把context修正为#id所匹配的元素
 		var origContext = context;
@@ -60,7 +76,7 @@
 			i,
 			prune = true,	// 只从右向左查找中用到，表示set是否筛选，如selector只一块表达式，为false
 			contextXML = Sizzle.isXML( context ),	// context是不是XML文档
-			parts = [],	// 存放chunker从selector中提取的块表达式和块间关系符
+			parts = [],		// 存放chunker从selector中提取的块表达式和块间关系符
 			soFar = selector;	// 用于保存chunker每次从selector中提取块表达式或块间关系符后的剩余部分
 		
 		do {
@@ -73,115 +89,91 @@
 				if ( m[2] ) {	extra = m[3]; break;	}
 			}
 		} while ( m );
-	
+		/*---------------------------------------------------
+		   2、如果存在位置伪类，origPOS=Expr.match.POS
+		  ---------------------------------------------------*/
 		if ( parts.length > 1 && origPOS.exec( selector ) ) {
-	
+			// 若parts有两元素，且首个是块间关系符，可直接用posProcess查找
 			if ( parts.length === 2 && Expr.relative[ parts[0] ] ) {
 				set = posProcess( parts[0] + parts[1], context, seed );
-	
+			// parts元素多于2，从左到右查找，每次查找，前者作为新上下文，不断缩小范围
 			} else {
-				set = Expr.relative[ parts[0] ] ?
-					[ context ] :
-					Sizzle( parts.shift(), context );
-	
+				// 如首元素是块间关系符，直接把context作为第一个上下文元素集合，否则弹出第一个块表达式
+				set = Expr.relative[ parts[0] ] ? [ context ] : Sizzle( parts.shift(), context );
 				while ( parts.length ) {
-					selector = parts.shift();
-	
-					if ( Expr.relative[ selector ] ) {
-						selector += parts.shift();
-					}
-					
+					selector = parts.shift();	// 弹出一个元素
+					// 如果是块间关系符，将它和下个元素结合，如“>span”
+					if ( Expr.relative[ selector ] ) {	selector += parts.shift();	}
+					// 返回值赋予set，作为下个块表达式的上下文
 					set = posProcess( selector, set, seed );
 				}
 			}
-	
+		/*--------------------------------------
+		   3、如果不存在伪类，从右向左找
+		  --------------------------------------*/
 		} else {
-			// Take a shortcut and set the context if the root selector is an ID
-			// (but not if it'll be faster if the inner selector is an ID)
-			if ( !seed && parts.length > 1 && context.nodeType === 9 && !contextXML &&
-					Expr.match.ID.test(parts[0]) && !Expr.match.ID.test(parts[parts.length - 1]) ) {
-	
-				ret = Sizzle.find( parts.shift(), context, contextXML );
-				context = ret.expr ?
-					Sizzle.filter( ret.expr, ret.set )[0] :
-					ret.set[0];
+			// 首块是#id可以作为上下文，缩小范围，但内部有#id就不能这样了
+			// 如不指定过滤范围，切出的元素多于1，context是document，非XML文档，首块是#id，末块非#id
+			if ( !seed && parts.length > 1 && context.nodeType === 9 && !contextXML && Expr.match.ID.test(parts[0]) && !Expr.match.ID.test(parts[parts.length - 1]) ) {
+				ret = Sizzle.find( parts.shift(), context, contextXML );	// 对第一个块表达式简单查找
+				context = ret.expr ?	// 如果还有剩余部分（为什么还会有剩余？）
+					Sizzle.filter( ret.expr, ret.set )[0] :    // 对查找结果进行过滤
+					ret.set[0];	//没有剩余部分，就匹配元素的第一个元素（也许是防止同id元素）作为后续查找的上下文
 			}
-	
+			/* 如果现在context存在了，从右向左找 */
 			if ( context ) {
-				ret = seed ?
-					{ expr: parts.pop(), set: makeArray(seed) } :
-					Sizzle.find( parts.pop(), parts.length === 1 && (parts[0] === "~" || parts[0] === "+") && context.parentNode ? context.parentNode : context, contextXML );
-	
-				set = ret.expr ?
-					Sizzle.filter( ret.expr, ret.set ) :
-					ret.set;
-	
-				if ( parts.length > 0 ) {
-					checkSet = makeArray( set );
-	
-				} else {
-					prune = false;
-				}
+				// 查找末块，得到候选集set（如果有seed，seed就相当于一个候选集了）
+				ret = seed ? { expr: parts.pop(), set: makeArray(seed) } : Sizzle.find( parts.pop(), parts.length === 1 && (parts[0] === "~" || parts[0] === "+") && context.parentNode ? context.parentNode : context, contextXML );
+				// 如果有剩余部分，对查找结果进行过滤，得到候选集
+				set = ret.expr ? Sizzle.filter( ret.expr, ret.set ) : ret.set;
+				// parts中还有其他元素，则创建set副本即checkSet，若parts为空，则不需再修剪了
+				if ( parts.length > 0 ) {	checkSet = makeArray( set );	} else {	prune = false;	}
 	
 				while ( parts.length ) {
-					cur = parts.pop();
-					pop = cur;
-	
-					if ( !Expr.relative[ cur ] ) {
-						cur = "";
-					} else {
-						pop = parts.pop();
-					}
-	
-					if ( pop == null ) {
-						pop = context;
-					}
+					// cur和pop是相同的
+					cur = parts.pop(); pop = cur;
+					// 如不是关系符，默认后代关系，如果是关系符，再弹出一个块作为checkSet的上下文
+					if ( !Expr.relative[ cur ] ) {	cur = "";	} else {	pop = parts.pop();	}
+					// 如没有前一个块了，表示已达数组头，直接将context作为checkSet上下文
+					if ( pop == null ) {	pop = context;	}
 	
 					Expr.relative[ cur ]( checkSet, pop, contextXML );
 				}
-	
-			} else {
-				checkSet = parts = [];
-			}
+			} else {	checkSet = parts = [];	}	/* （首块是id但没匹配）没必要继续找了，清空 */
 		}
-	
-		if ( !checkSet ) {
-			checkSet = set;
-		}
-	
-		if ( !checkSet ) {
-			Sizzle.error( cur || selector );
-		}
-	
+		/*-----------------------------------------------------
+		   4、根据checkSet筛选set，将最终结果放进results
+		  -----------------------------------------------------*/
+		// 从左到右查找是不会出现checkSet的，但为了统一筛选与合并的代码，把它设置为候选集一样（多余）
+		if ( !checkSet ) {	checkSet = set;	}
+		// 嗯~这是为什么？
+		if ( !checkSet ) {	Sizzle.error( cur || selector );	}
+		/*--- 如果checkSet是数组，遍历它，检查元素是否满足条件，如满足，将set中对应元素放入results ---*/
 		if ( toString.call(checkSet) === "[object Array]" ) {
+			// 不需修剪，直接将checkSet放入results
+			//（当只有一个块时prune才会赋false，checkSet和set指向同一数组）
 			if ( !prune ) {
 				results.push.apply( results, checkSet );
-	
+			// 如context是元素，遍历映射集，如元素满足（true，是元素，包含在context中），set中对应元素入results
 			} else if ( context && context.nodeType === 1 ) {
 				for ( i = 0; checkSet[i] != null; i++ ) {
-					if ( checkSet[i] && (checkSet[i] === true || checkSet[i].nodeType === 1 && Sizzle.contains(context, checkSet[i])) ) {
-						results.push( set[i] );
-					}
+					if ( checkSet[i] && (checkSet[i] === true || checkSet[i].nodeType === 1 && Sizzle.contains(context, checkSet[i])) ) {	results.push( set[i] );	}
 				}
-	
+			// 如context是文档对象，遍历checkSet，如元素满足（不是null，是元素），set中对应元素入results
 			} else {
 				for ( i = 0; checkSet[i] != null; i++ ) {
-					if ( checkSet[i] && checkSet[i].nodeType === 1 ) {
-						results.push( set[i] );
-					}
+					if ( checkSet[i] && checkSet[i].nodeType === 1 ) {	results.push( set[i] );	}
 				}
 			}
-	
-		} else {
-			makeArray( checkSet, results );
-		}
-	
-		if ( extra ) {
-			Sizzle( extra, origContext, results, seed );
-			Sizzle.uniqueSort( results );
-		}
-	
-		return results;
+		/*--- 如果checkSet不是数组，可能是NodeList（这种情况只在selector是个简单标签或类才出现），
+			这时不需要筛选set了，checkSet和set也指向同一数组，可直接将checkSet插入results ---*/
+		} else {	makeArray( checkSet, results );	}
+		/*-----------------------------------------------------
+		   5、如果存在并列表达式，递归，合并，排序，去重
+		  -----------------------------------------------------*/
+		if ( extra ) {	Sizzle( extra, origContext, results, seed );	Sizzle.uniqueSort( results );	}
+
+		return results; // 6、返回结果集啦
 	};
 	
 	// 工具方法，排序、去重
@@ -1462,21 +1454,18 @@
 			tmpSet = [],
 			later = "",
 			root = context.nodeType ? [context] : context;
-	
-		// Position selectors must be done after the filter
-		// And so must :not(positional) so we move all PSEUDOs to the end
 		while ( (match = Expr.match.PSEUDO.exec( selector )) ) {
-			later += match[0];
-			selector = selector.replace( Expr.match.PSEUDO, "" );
+			later += match[0];	// 存储一个匹配的伪类（循环存储所有）
+			selector = selector.replace( Expr.match.PSEUDO, "" );	// 删除一个伪类（循环删除所有）
 		}
-	
+		// 如果删除伪类后selector只剩一块间关系符，则追加通配符“*”，如“>*”
 		selector = Expr.relative[selector] ? selector + "*" : selector;
-	
+		// 对已删除伪类的选择器表达式进行查找，结果放进tmpSet
 		for ( var i = 0, l = root.length; i < l; i++ ) {
 			Sizzle( selector, root[i], tmpSet, seed );
 		}
 	
-		return Sizzle.filter( later, tmpSet );
+		return Sizzle.filter( later, tmpSet );	// 用later过滤tmpSet
 	};
 	
 	// EXPOSE
